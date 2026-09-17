@@ -137,26 +137,46 @@ flowchart LR
 
 ---
 
-## 7. ตัวอย่างโค้ด (Configuration Example)
+## 7. ตัวอย่างโค้ดและการตั้งค่าจริงในโปรเจกต์ (Configuration & Code)
 
-เพื่อให้ทีมเห็นภาพชัดเจนขึ้น นี่คือตัวอย่างโค้ดไพธอน (Python) ที่เราใช้สั่งสร้าง Sandbox พร้อมกับตั้งค่าระดับความปลอดภัย (Security Boundaries) ต่างๆ ที่กล่าวไปข้างต้น:
+เพื่อให้ทีมเห็นภาพชัดเจนว่าต้องไปแก้ตรงไหน นี่คือตัวอย่างจากไฟล์จริงในโปรเจกต์ (POC) ของเราครับ:
+
+### 1. ตั้งค่าผ่านไฟล์ `.env`
+เราดึงค่า Limit ต่างๆ ออกมาไว้ข้างนอกทั้งหมด เพื่อให้ทีม Infra หรือ DevOps สามารถปรับจูนได้ง่ายโดยไม่ต้องแก้โค้ด
+
+```env
+# ตั้งค่าความปลอดภัยของ Docker Sandbox
+SANDBOX_NETWORK=none          # ปิดเน็ต (ถ้าอยากให้ต่อ DB ภายในได้ให้เปลี่ยนตรงนี้)
+SANDBOX_MEM=512m              # จำกัด RAM ต่อ 1 Sandbox (รองรับ User ได้เยอะขึ้น)
+SANDBOX_CPUS=1.0              # จำกัด CPU ไม่ให้ดึงพลังเครื่องไปหมด
+SANDBOX_PIDS_LIMIT=256        # กันโปรแกรมแฮงค์แล้ว fork process จนเครื่องค้าง
+SANDBOX_EXEC_TIMEOUT=60       # ให้เวลารันโค้ดสูงสุดแค่ 60 วินาที
+SANDBOX_IDLE_TTL=900          # ถ้าไม่มีใครคุยด้วย 15 นาที (900 วิ) ลบทิ้งทันที
+```
+
+### 2. โค้ดคำสั่งสร้าง Sandbox ในไฟล์ `app/sessions.py`
+ระบบจะดึงค่าจาก `.env` ด้านบนมาใช้สร้าง Container นี่คือโค้ด Python จริงที่เราใช้บังคับความปลอดภัย (Security Boundaries):
 
 ```python
-# ตัวอย่างโค้ดตอนสร้าง Sandbox (รันโดย FastAPI Background Task)
-container = docker_client.containers.run(
-    image="sandbox-image:latest",       # Image ที่เตรียมไว้ (มี Python แต่ไม่มีข้อมูลสำคัญ)
-    name=f"sandbox-{thread_id}",        # 1 Session = 1 กล่อง
-    detach=True,                        # รันเป็น Background
-    
-    # --- 🛡️ การตั้งค่าความปลอดภัย (Security Boundaries) ---
-    network_mode="none",                # ❌ ปิดการเชื่อมต่ออินเทอร์เน็ต 100%
-    user="1000:1000",                   # 👤 บังคับให้รันเป็นผู้ใช้ธรรมดา (ห้ามเป็น Root)
-    mem_limit="512m",                   # 💾 จำกัด RAM สูงสุดที่ 512 MB ป้องกันเซิร์ฟเวอร์ล่ม
-    nano_cpus=int(1.0 * 1e9),           # 💾 จำกัดการใช้ CPU สูงสุดที่ 1 Core
-    cap_drop=["ALL"],                   # 🔒 ริบสิทธิ์พิเศษ (Capabilities) ของ Linux คืนทั้งหมด
-    security_opt=["no-new-privileges:true"], # 🔒 ห้ามแอบเพิ่มสิทธิ์ตัวเองทีหลัง
-    environment={},                     # 🚫 ไม่ส่ง Environment Variables (เช่น API Key) เข้าไปเด็ดขาด
-    
-    working_dir="/workspace"            # ให้ AI ทำงานได้แค่ในโฟลเดอร์นี้เท่านั้น
-)
+    def _run_container(self, thread_id: str):
+        """สร้าง container พร้อมค่าความปลอดภัยทั้งหมด"""
+        return self.client.containers.run(
+            settings.sandbox_image,                  # Image ที่เตรียมไว้ (มี Python, pandas แต่ไม่มี Secret)
+            name=f"sandbox-{thread_id}",             # 1 Session = 1 กล่อง (ชื่อห้ามซ้ำ)
+            detach=True,                             # รันเป็น Background
+            init=settings.sandbox_init,              # จัดการ Process ป้องกัน Zombie Process
+            labels={"app": settings.sandbox_label, "thread_id": thread_id},
+            user=settings.sandbox_user,              # 👤 บังคับรันเป็น user "1000:1000" (ไม่ใช่ root)
+            working_dir=settings.sandbox_workdir,
+            
+            # --- 🛡️ หัวใจสำคัญเรื่องความปลอดภัย ---
+            network_mode=settings.sandbox_network,   # ❌ ปิดเน็ต 100% ตามค่าใน .env
+            mem_limit=settings.sandbox_mem,          # 💾 จำกัด RAM
+            memswap_limit=settings.sandbox_mem,      # 💾 ห้ามแอบใช้ Swap เพิ่ม (กันดิสก์เต็ม)
+            nano_cpus=int(settings.sandbox_cpus * 1e9), 
+            pids_limit=settings.sandbox_pids_limit,  # 💣 กัน Fork Bomb
+            cap_drop=["ALL"],                        # 🔒 ริบสิทธิ์พิเศษระดับ OS (Linux capabilities) ทิ้งทั้งหมด
+            security_opt=["no-new-privileges:true"], # 🔒 ห้ามแอบยกระดับสิทธิ์ตัวเอง (setuid) ภายหลัง
+            environment={},                          # 🚫 ส่ง dict ว่างเข้าไป = ไม่ส่ง API Key หรือ Secret เลย
+        )
 ```
