@@ -1,0 +1,55 @@
+# รันทั้งหมดด้วยคำสั่งเดียว:  docker compose up --build
+#
+#   socket-proxy  ← ตัวเดียวที่แตะ Docker ของเครื่อง, อนุญาตเฉพาะ API ที่จำเป็น
+#   api           ← FastAPI + agent, สั่ง Docker ผ่าน proxy
+#   sandbox-image ← มีไว้ build image ของ sandbox เท่านั้น (รันแล้วจบทันที)
+#
+# container "sandbox-<thread_id>" ถูกสร้างโดย api ตอนมี request
+# (Docker ของเครื่องเป็นคนสร้าง จึงอยู่ระดับเดียวกับ api ไม่ได้อยู่ใน compose project)
+
+name: poc-deepagent
+
+services:
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: 1   # create / start / inspect / list / delete / archive (อัปโหลด-ดาวน์โหลดไฟล์)
+      EXEC: 1         # docker exec (execute)
+      IMAGES: 1       # เช็กว่ามี image sandbox แล้ว
+      POST: 1         # อนุญาตคำสั่งที่ไม่ใช่ GET (สร้าง/ลบ/exec)
+      # ที่เหลือปิดเป็นค่าเริ่มต้น: NETWORKS, VOLUMES, BUILD, SWARM, SECRETS, AUTH, ...
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+    restart: unless-stopped
+    # ไม่เปิดพอร์ตออกนอก — มีแค่ api ที่คุยได้
+
+  sandbox-image:
+    image: ${SANDBOX_IMAGE:-poc-deepagent-sandbox:latest}
+    build: ./sandbox
+    command: ["true"]         # แค่ build แล้วจบ
+    network_mode: none
+    restart: "no"
+
+  api:
+    build: .
+    image: poc-deepagent-api:latest
+    env_file: .env
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+    ports:
+      - "8000:8000"
+    networks: [internal, default]
+    depends_on:
+      socket-proxy:
+        condition: service_started
+      sandbox-image:
+        condition: service_completed_successfully
+    init: true
+    stop_grace_period: 30s    # เวลาให้ api ลบ sandbox ก่อนถูก kill
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true            # network ระหว่าง api ↔ proxy ออก internet ไม่ได้
+  default: {}                 # api ใช้ network นี้ออกไปหา LLM API
