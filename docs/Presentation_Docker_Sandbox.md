@@ -20,6 +20,9 @@
 
 Pattern ที่เราเลือกใช้คือ **"Sandbox as a tool"** หมายความว่า ตัว AI และ API Key จะอยู่ **นอก** Sandbox เสมอ ส่วน Sandbox มีหน้าที่แค่ "รับคำสั่งไปรัน" เท่านั้น
 
+**ตัวอย่างการใช้งานจริง (Real Use Case): วิเคราะห์ข้อมูลยอดขาย**
+> **โจทย์:** User อัปโหลดไฟล์ `sales.csv` แล้วพิมพ์สั่งว่า *"ช่วยสรุปยอดขายรวมแต่ละเดือน และวาดกราฟเส้นให้หน่อย"*
+
 ```mermaid
 sequenceDiagram
     participant User as 🧑‍💻 User
@@ -27,14 +30,16 @@ sequenceDiagram
     participant LLM as 🧠 LLM API
     participant Docker as 🐳 Docker Sandbox<br>(ไม่มี API Key)
 
-    User->>API: ขอให้ AI ช่วยเขียนและรันสคริปต์
+    User->>API: อัปโหลด sales.csv + "ช่วยสรุปยอดขายและวาดกราฟ"
+    API->>Docker: นำไฟล์ sales.csv ไปวางใน Sandbox
     API->>LLM: ส่ง Prompt ไปประมวลผล
-    LLM-->>API: LLM ตัดสินใจใช้เครื่องมือ (Tool) "execute"
-    API->>Docker: ส่งคำสั่งไปรันใน Container<br>(แยก 1 Container ต่อ 1 Session)
-    Docker-->>API: ส่งผลลัพธ์ (Output) กลับมา
-    API->>LLM: ส่งผลลัพธ์กลับไปให้ LLM วิเคราะห์ต่อ
-    LLM-->>API: ได้คำตอบหรือข้อสรุป
-    API-->>User: ส่งคำตอบให้ผู้ใช้
+    LLM-->>API: LLM เขียน Python Script ด้วย pandas & matplotlib และสั่ง "execute"
+    API->>Docker: นำ Python Script ไปรันใน Container
+    Docker-->>API: ส่งผลลัพธ์ (ค่าสรุปยอดขาย) และสร้างไฟล์ chart.png ใน Sandbox
+    API->>Docker: ไปหยิบไฟล์ chart.png ออกมาจาก Sandbox
+    API->>LLM: ส่งผลลัพธ์กลับไปให้ LLM วิเคราะห์ความถูกต้อง
+    LLM-->>API: ตอบกลับพร้อมข้อความสรุป
+    API-->>User: ส่งข้อความสรุปยอดขาย + รูปกราฟ chart.png ให้ผู้ใช้
 ```
 
 ---
