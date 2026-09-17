@@ -61,18 +61,18 @@ flowchart LR
         
         subgraph Sandbox1[Sandbox: Session A]
             direction TB
-            S1[❌ ปิดอินเทอร์เน็ต]
-            S2[👤 จำกัดสิทธิ์ (Non-Root)]
-            S3[💾 จำกัด RAM & CPU]
-            S4[⏱️ ตัดจบเมื่อรันนานเกิน (Timeout)]
+            S1["❌ ปิดอินเทอร์เน็ต"]
+            S2["👤 จำกัดสิทธิ์ (Non-Root)"]
+            S3["💾 จำกัด RAM & CPU"]
+            S4["⏱️ ตัดจบเมื่อรันนานเกิน (Timeout)"]
         end
         
         subgraph Sandbox2[Sandbox: Session B]
             direction TB
-            S5[❌ ปิดอินเทอร์เน็ต]
-            S6[👤 จำกัดสิทธิ์ (Non-Root)]
-            S7[💾 จำกัด RAM & CPU]
-            S8[⏱️ ตัดจบเมื่อรันนานเกิน (Timeout)]
+            S5["❌ ปิดอินเทอร์เน็ต"]
+            S6["👤 จำกัดสิทธิ์ (Non-Root)"]
+            S7["💾 จำกัด RAM & CPU"]
+            S8["⏱️ ตัดจบเมื่อรันนานเกิน (Timeout)"]
         end
         
         API -->|ส่งคำสั่งผ่าน docker exec| Sandbox1
